@@ -7,7 +7,7 @@ module mem1KB_32bit (
     output wire [31:0] Instruction_out
 );
 
-    localparam integer DEPTH = 128;  // ✅ plain integer, no width limit
+    localparam integer DEPTH = 64;  // ✅ plain integer, no width limit
     reg [31:0] mem [0:DEPTH-1];      // [0:255] = 256 entries = 1KB
 
     // Write
