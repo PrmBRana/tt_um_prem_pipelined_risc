@@ -22,6 +22,11 @@ jobs:
       - name: Install Python packages
         shell: bash
         run: pip install -r test/requirements.txt
+      
+      - name: Install Python dependencies
+        run: |
+          pip install cocotb cocotb-tools
+          pip install cocotbext-uart
 
       - name: Run tests
         run: |
