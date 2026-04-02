@@ -303,7 +303,7 @@ module pipeline(
     wire        gpio1_wr_en_w, gpio1_wdata_w;
     wire        gpio2_wr_en_w, gpio2_wdata_w;
     wire        UART_tx_start_w, UART_tx_busy_w, UART_rx_ready_w;
-    wire [31:0] UART_tx_data_w, UART_rx_data_w;
+    wire [7:0] UART_tx_data_w, UART_rx_data_w;
 
     // Data memory + peripheral bus
     DataMem databus_inst(
@@ -374,6 +374,7 @@ module pipeline(
         .gpio_out2(spi2_cs_n));
 
 endmodule
+
 
 
 
