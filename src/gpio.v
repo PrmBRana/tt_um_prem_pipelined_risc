@@ -18,7 +18,7 @@ module gpio1_io (
     reg deassert_pending;
     wire spi_idle = !spi_busy && !spi_pending;
 
-    always @(posedge clk) begin
+    always @(posedge clk or posedge reset) begin
         if (reset) begin
             gpio_out_reg     <= 1'b1;
             deassert_pending <= 1'b0;
@@ -64,7 +64,7 @@ module gpio2_io (
     reg deassert_pending;
     wire spi_idle = !spi_busy && !spi_pending;
 
-    always @(posedge clk) begin
+    always @(posedge clk or posedge reset) begin
         if (reset) begin
             gpio_out_reg     <= 1'b1;
             deassert_pending <= 1'b0;

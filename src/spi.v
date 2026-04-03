@@ -5,7 +5,7 @@ module spi_master #(
     parameter DATA_WIDTH = 8,
     parameter CPOL       = 0,
     parameter CPHA       = 0,
-    parameter CLK_DIV    = 4    // 50MHz → 12.5MHz
+    parameter CLK_DIV    = 4    // 50MHz → 12.5MHz (Adjustable via param)
 )(
     input  wire                  clk,
     input  wire                  reset,
@@ -19,66 +19,89 @@ module spi_master #(
     input  wire                  miso
 );
 
-
+    // --- Internal Registers ---
     reg [DATA_WIDTH-1:0]           tx_shift, rx_shift;
     reg [$clog2(DATA_WIDTH+1)-1:0] bit_cnt;
     reg [$clog2(CLK_DIV)-1:0]      clk_div;
     reg                            sclk_en, sclk_d;
+    reg [1:0]                      state;
 
-    // FIX WIDTHTRUNC: truncation is intentional — values fit in width
-    // CLK_DIV=4: HALF_DIV=1 (2-bit), FULL_DIV=3 (2-bit) ✓
-    // CLK_DIV=8: HALF_DIV=3 (3-bit), FULL_DIV=7 (3-bit) ✓
-    /* verilator lint_off WIDTHTRUNC */
-    localparam [$clog2(CLK_DIV)-1:0] HALF_DIV = CLK_DIV/2 - 1;
-    localparam [$clog2(CLK_DIV)-1:0] FULL_DIV = CLK_DIV   - 1;
-    /* verilator lint_on WIDTHTRUNC */
+    // --- 1. MISO Synchronizer (Critical for 50MHz ASIC) ---
+    // Prevents metastability from external asynchronous input
+    reg miso_s1, miso_s2;
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            miso_s1 <= 1'b0;
+            miso_s2 <= 1'b0;
+        end else begin
+            miso_s1 <= miso;
+            miso_s2 <= miso_s1;
+        end
+    end
+
+    // --- 2. Clock Divider Parameters ---
+    localparam [$clog2(CLK_DIV)-1:0] HALF_DIV = (CLK_DIV/2) - 1;
+    localparam [$clog2(CLK_DIV)-1:0] FULL_DIV = (CLK_DIV)   - 1;
 
     localparam IDLE     = 2'b00;
     localparam TRANSFER = 2'b01;
     localparam FINISH   = 2'b10;
 
-    reg [1:0] state;
-
-    // ── Clock generation ──────────────────────────────────────
-    always @(posedge clk) begin
+    // --- 3. SCLK Generation (Async Reset) ---
+    always @(posedge clk or posedge reset) begin
         if (reset) begin
             clk_div <= 0;
             sclk    <= CPOL;
         end else if (sclk_en) begin
-            clk_div <= clk_div + 1;
-            if (clk_div == HALF_DIV || clk_div == FULL_DIV)
-                sclk <= ~sclk;
+            if (clk_div == FULL_DIV) begin
+                clk_div <= 0;
+                sclk    <= ~sclk;
+            end else begin
+                if (clk_div == HALF_DIV) begin
+                    sclk <= ~sclk;
+                end
+                clk_div <= clk_div + 1'b1;
+            end
         end else begin
             clk_div <= 0;
             sclk    <= CPOL;
         end
     end
 
-    // ── Edge detect ───────────────────────────────────────────
-    always @(posedge clk)
-        sclk_d <= reset ? CPOL : sclk;
+    // Edge Detection for Sampling/Shifting
+    always @(posedge clk or posedge reset) begin
+        if (reset) sclk_d <= CPOL;
+        else       sclk_d <= sclk;
+    end
 
-    wire sclk_rise   = ( sclk & ~sclk_d);
-    wire sclk_fall   = (~sclk &  sclk_d);
+    wire sclk_rise   = ( sclk && !sclk_d);
+    wire sclk_fall   = (!sclk &&  sclk_d);
     wire sample_edge = (CPHA == 0) ? sclk_rise : sclk_fall;
     wire shift_edge  = (CPHA == 0) ? sclk_fall : sclk_rise;
 
-    // ── FSM ───────────────────────────────────────────────────
-    always @(posedge clk) begin
+    // --- 4. Main FSM (Async Reset) ---
+    always @(posedge clk or posedge reset) begin
         if (reset) begin
             state    <= IDLE;
-            busy     <= 0; done    <= 0; sclk_en <= 0;
-            mosi     <= 0; rx_data <= 0;
-            tx_shift <= 0; rx_shift <= 0; bit_cnt <= 0;
+            busy     <= 1'b0;
+            done     <= 1'b0;
+            sclk_en  <= 1'b0;
+            mosi     <= 1'b0;
+            rx_data  <= {DATA_WIDTH{1'b0}};
+            tx_shift <= {DATA_WIDTH{1'b0}};
+            rx_shift <= {DATA_WIDTH{1'b0}};
+            bit_cnt  <= 0;
         end else begin
             case (state)
                 IDLE: begin
-                    done <= 0; busy <= 0; sclk_en <= 0;
+                    done <= 1'b0;
+                    busy <= 1'b0;
+                    sclk_en <= 1'b0;
                     if (start) begin
-                        busy     <= 1;
-                        sclk_en  <= 1;
+                        busy     <= 1'b1;
+                        sclk_en  <= 1'b1;
                         tx_shift <= tx_data;
-                        rx_shift <= 0;
+                        rx_shift <= {DATA_WIDTH{1'b0}};
                         bit_cnt  <= DATA_WIDTH;
                         mosi     <= tx_data[DATA_WIDTH-1];
                         state    <= TRANSFER;
@@ -86,12 +109,14 @@ module spi_master #(
                 end
 
                 TRANSFER: begin
-                    if (sample_edge)
-                        rx_shift <= {rx_shift[DATA_WIDTH-2:0], miso};
+                    if (sample_edge) begin
+                        rx_shift <= {rx_shift[DATA_WIDTH-2:0], miso_s2}; // Use Synced MISO
+                    end
+                    
                     if (shift_edge) begin
-                        bit_cnt <= bit_cnt - 1;
+                        bit_cnt <= bit_cnt - 1'b1;
                         if (bit_cnt == 1) begin
-                            sclk_en <= 0;
+                            sclk_en <= 1'b0;
                             state   <= FINISH;
                         end else begin
                             tx_shift <= {tx_shift[DATA_WIDTH-2:0], 1'b0};
@@ -101,19 +126,16 @@ module spi_master #(
                 end
 
                 FINISH: begin
-                    done    <= 1;
-                    busy    <= 0;
+                    done    <= 1'b1;
+                    busy    <= 1'b0;
                     rx_data <= rx_shift;
-                    mosi    <= 0;
+                    mosi    <= 1'b0;
                     state   <= IDLE;
                 end
 
-                // FIX: prevents latch in synthesis (state=2'b11 undefined)
                 default: state <= IDLE;
-
             endcase
         end
     end
+
 endmodule
-
-

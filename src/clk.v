@@ -19,7 +19,7 @@ module pc_register (
 );
 
     // FIX: async reset — matches all other pipeline stages
-    always @(posedge clk) begin
+    always @(posedge clk or posedge reset) begin
         if (reset)
             PCF_out <= 32'd0;
         else if (!stallF)

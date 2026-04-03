@@ -64,7 +64,7 @@ module EX_stage (
 );
 
 
-    always @(posedge clk) begin
+    always @(posedge clk or posedge reset) begin
         if (reset || flushE) begin
             // Full NOP bubble — data AND control all zero
             RD1E_out        <= 32'd0;  // ALU input A = 0

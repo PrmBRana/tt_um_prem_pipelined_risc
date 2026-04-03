@@ -1,17 +1,6 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
-// ============================================================
-//  Hazard Unit
-//
-//  No FlushM needed — EX_stage fix handles null byte issue:
-//    flushE zeros RD1,RD2,MemWrite in EX register
-//    → bubble passes through MEM with MemWrite=0
-//    → UART never receives null write
-//
-//  FlushE added to load-use hazard (existing fix):
-//    prevents stale register read after lw
-// ============================================================
 module Hazard_Unit (
     input  wire [4:0]  Rs1D,
     input  wire [4:0]  Rs2D,
@@ -33,44 +22,56 @@ module Hazard_Unit (
     output reg  [1:0]  Forward_BE
 );
 
+    // 1. Forwarding Logic (Flattened for Speed)
+    // Priority: Memory Stage (RdM) > Writeback Stage (RdW)
+    always @(*) begin
+        // Default: No forwarding
+        Forward_AE = 2'b00;
+        Forward_BE = 2'b00;
 
-    // Load-use hazard: lw in EX, dependent instr in DE
-    wire load_use_hazard = (ResultSrcE_in == 2'b01) &&
-                            RegWriteE                &&
-                           (RdE != 5'b0)             &&
-                           ((Rs1D == RdE) || (Rs2D == RdE));
+        // Forward A logic
+        if ((Rs1E != 5'b0) && RegWriteM && (Rs1E == RdM)) begin
+            Forward_AE = 2'b10; // Forward from Memory Stage
+        end else if ((Rs1E != 5'b0) && RegWriteW && (Rs1E == RdW)) begin
+            Forward_AE = 2'b01; // Forward from Writeback Stage
+        end
+
+        // Forward B logic
+        if ((Rs2E != 5'b0) && RegWriteM && (Rs2E == RdM)) begin
+            Forward_BE = 2'b10; // Forward from Memory Stage
+        end else if ((Rs2E != 5'b0) && RegWriteW && (Rs2E == RdW)) begin
+            Forward_BE = 2'b01; // Forward from Writeback Stage
+        end
+    end
+
+    // 2. Hazard Detection Logic (Stalls and Flushes)
+    // ResultSrcE_in == 2'b01 indicates a LOAD instruction (lw)
+    wire lw_stall = (ResultSrcE_in == 2'b01) && 
+                    ((Rs1D == RdE) || (Rs2D == RdE)) && 
+                    (RdE != 5'b0);
 
     always @(*) begin
         // Defaults
-        Forward_AE = 2'b00;
-        Forward_BE = 2'b00;
-        StallF     = 1'b0;
-        StallD     = 1'b0;
-        FlushD     = 1'b0;
-        FlushE     = 1'b0;
+        StallF = 1'b0;
+        StallD = 1'b0;
+        FlushE = 1'b0;
+        FlushD = 1'b0;
 
-        // 1. Forwarding
-        if      ((Rs1E == RdM) && RegWriteM && (Rs1E != 5'b0)) Forward_AE = 2'b10;
-        else if ((Rs1E == RdW) && RegWriteW && (Rs1E != 5'b0)) Forward_AE = 2'b01;
-
-        if      ((Rs2E == RdM) && RegWriteM && (Rs2E != 5'b0)) Forward_BE = 2'b10;
-        else if ((Rs2E == RdW) && RegWriteW && (Rs2E != 5'b0)) Forward_BE = 2'b01;
-
-        // 2. Load-use hazard — stall + bubble
-        if (load_use_hazard) begin
+        // Handle Stalls (Load-Use Hazard)
+        if (lw_stall) begin
             StallF = 1'b1;
             StallD = 1'b1;
-            FlushE = 1'b1;
+            FlushE = 1'b1; // Insert a bubble in Execute
         end
 
-        // 3. Branch/jump — higher priority
+        // Handle Control Hazards (Branch/Jump)
+        // Control hazard has priority over load-use to prevent stuck pipeline
         if (PCSRCE) begin
             FlushD = 1'b1;
-            FlushE = 1'b1;   // zeros EX register → safe bubble to MEM
+            FlushE = 1'b1;
             StallF = 1'b0;
             StallD = 1'b0;
         end
     end
 
 endmodule
-

@@ -1,14 +1,6 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
-// ============================================================
-//  MEM_stage — EX/MEM Pipeline Register
-//
-//  No flushM needed — EX_stage fix handles it:
-//    flushE zeros all EX outputs including MemWrite
-//    → bubble reaches MEM with MemWrite=0, ALUResult=0
-//    → sel_uart_tx_data=0 → no UART write
-// ============================================================
 module MEM_stage(
     input wire        clk,
     input wire        reset,
@@ -30,7 +22,8 @@ module MEM_stage(
     output reg        MemWriteM_out
 );
     
-    always @(posedge clk) begin
+    // FIX: Added 'or posedge reset' to the sensitivity list
+    always @(posedge clk or posedge reset) begin
         if (reset) begin
             ALUResult_out  <= 32'b0;
             WriteData_out  <= 32'b0;
@@ -50,4 +43,3 @@ module MEM_stage(
         end
     end
 endmodule
-
