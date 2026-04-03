@@ -73,7 +73,7 @@ module DataMem #(
 
     // --- UART TX Logic ---
     reg uart_tx_wr_lock;
-    always @(posedge clk) begin
+    always @(posedge clk or posedge reset) begin
         if (reset) uart_tx_wr_lock <= 1'b0;
         else uart_tx_wr_lock <= (memwriteM_in && sel_uart_tx);
     end
@@ -82,7 +82,7 @@ module DataMem #(
     wire uart_tx_rd_level = !uart_tx_busy && !uart_tx_empty;
     wire uart_tx_rd = uart_tx_rd_level && !uart_tx_rd_prev;
 
-    always @(posedge clk) begin
+    always @(posedge clk or posedge reset) begin
         if (reset) begin
             uart_tx_rd_prev <= 1'b0; uart_tx_start <= 1'b0; uart_out_data <= 8'd0;
         end else begin
@@ -99,7 +99,7 @@ module DataMem #(
 
     // --- UART RX Logic ---
     reg uart_rx_rd_lock;
-    always @(posedge clk) begin
+    always @(posedge clk or posedge reset) begin
         if (reset) uart_rx_rd_lock <= 1'b0;
         else uart_rx_rd_lock <= (!memwriteM_in && sel_uart_rx);
     end
@@ -115,7 +115,7 @@ module DataMem #(
     reg [7:0] spi1_tx_buf;
     assign spi1_pending_out = spi1_pending;
     wire spi1_tx_wr = memwriteM_in && sel_spi1_tx && !spi1_tx_wr_lock;
-    always @(posedge clk) begin
+    always @(posedge clk or posedge reset) begin
         if (reset) begin spi1_start <= 1'b0; spi1_pending <= 1'b0; spi1_tx_wr_lock <= 1'b0; end
         else begin
             spi1_start <= 1'b0;
@@ -126,7 +126,7 @@ module DataMem #(
     end
 
     reg spi1_done_r;
-    always @(posedge clk) spi1_done_r <= spi1_done;
+    always @(posedge clk or posedge reset) spi1_done_r <= spi1_done;
     wire spi1_rx_wr = spi1_done & !spi1_done_r;
 
     CircularBuffer #(.DATA_WIDTH(8), .DEPTH(SPI_RX_DEPTH)) SPI1_RX_FIFO (
@@ -140,7 +140,7 @@ module DataMem #(
     reg [7:0] spi2_tx_buf;
     assign spi2_pending_out = spi2_pending;
     wire spi2_tx_wr = memwriteM_in && sel_spi2_tx && !spi2_tx_wr_lock;
-    always @(posedge clk) begin
+    always @(posedge clk or posedge reset) begin
         if (reset) begin spi2_start <= 1'b0; spi2_pending <= 1'b0; spi2_tx_wr_lock <= 1'b0; end
         else begin
             spi2_start <= 1'b0;
@@ -151,7 +151,7 @@ module DataMem #(
     end
 
     reg spi2_done_r;
-    always @(posedge clk) spi2_done_r <= spi2_done;
+    always @(posedge clk or posedge reset) spi2_done_r <= spi2_done;
     wire spi2_rx_wr = spi2_done & !spi2_done_r;
 
     CircularBuffer #(.DATA_WIDTH(8), .DEPTH(SPI_RX_DEPTH)) SPI2_RX_FIFO (
@@ -161,7 +161,7 @@ module DataMem #(
     );
 
     // --- GPIO Logic ---
-    always @(posedge clk) begin
+    always @(posedge clk or posedge reset) begin
         if (reset) begin gpio1_wdata <= 1'b1; gpio2_wdata <= 1'b1; gpio1_wr_en <= 1'b0; gpio2_wr_en <= 1'b0; end
         else begin
             gpio1_wr_en <= 1'b0; gpio2_wr_en <= 1'b0;
