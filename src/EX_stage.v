@@ -1,10 +1,19 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
+// =============================================================================
+// EX_stage.v — ID/EX pipeline latch
+//
+// Added: ALUSrcA_in [1:0] / ALUSrcA_out [1:0]
+//   Passes the new Control.ALUSrcA signal through the latch so pipeline.v
+//   can select SrcA correctly for LUI (force 0) and AUIPC (force PC_E).
+// =============================================================================
+
 module EX_stage (
     input  wire        clk,
     input  wire        reset,
     input  wire        flushE,
+
     input  wire [31:0] RD1D_in,
     input  wire [31:0] RD2D_in,
     input  wire [31:0] ImmExtD_in,
@@ -15,6 +24,7 @@ module EX_stage (
     input  wire [4:0]  RdD_in,
     input  wire [3:0]  ALUControlD_in,
     input  wire        ALUSrcD_in,
+    input  wire [1:0]  ALUSrcA_in,     // NEW
     input  wire        RegWriteD_in,
     input  wire [1:0]  ResultSrcD_in,
     input  wire        MemWriteD_in,
@@ -22,6 +32,7 @@ module EX_stage (
     input  wire        JumpD_in,
     input  wire        JumpR_in,
     input  wire [1:0]  ALUType_in,
+
     output reg  [31:0] RD1E_out,
     output reg  [31:0] RD2E_out,
     output reg  [31:0] ImmExtD_out,
@@ -32,6 +43,7 @@ module EX_stage (
     output reg  [4:0]  RdD_out,
     output reg  [3:0]  ALUControlD_out,
     output reg         ALUSrcD_out,
+    output reg  [1:0]  ALUSrcA_out,    // NEW
     output reg         RegWriteD_out,
     output reg  [1:0]  ResultSrcD_out,
     output reg         MemWriteD_out,
@@ -52,6 +64,7 @@ module EX_stage (
             RdD_out         <= 5'd0;
             ALUControlD_out <= 4'd0;
             ALUSrcD_out     <= 1'b0;
+            ALUSrcA_out     <= 2'b00;
             RegWriteD_out   <= 1'b0;
             ResultSrcD_out  <= 2'd0;
             MemWriteD_out   <= 1'b0;
@@ -70,6 +83,7 @@ module EX_stage (
             RdD_out         <= RdD_in;
             ALUControlD_out <= ALUControlD_in;
             ALUSrcD_out     <= ALUSrcD_in;
+            ALUSrcA_out     <= ALUSrcA_in;
             RegWriteD_out   <= RegWriteD_in;
             ResultSrcD_out  <= ResultSrcD_in;
             MemWriteD_out   <= MemWriteD_in;
@@ -80,5 +94,6 @@ module EX_stage (
         end
     end
 endmodule
+
 
 

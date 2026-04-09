@@ -3,7 +3,7 @@
 
 module CircularBuffer #(
     parameter DATA_WIDTH = 8,
-    parameter DEPTH      = 4   // must be 4 — flattened implementation
+    parameter DEPTH      = 4
 )(
     input  wire                  clk,
     input  wire                  reset,
@@ -14,62 +14,37 @@ module CircularBuffer #(
     output wire                  full,
     output wire                  empty
 );
-    // Use DEPTH in the full/empty comparison so parameter is not unused
-    // DEPTH is fixed at 4 — ptr and count widths are hardcoded for synthesis
-    /* verilator lint_off UNUSEDPARAM */
-    // DEPTH drives the full threshold — keep it as a named constant
-    localparam DEPTH_VAL = DEPTH; // ties DEPTH into elaboration
-    /* verilator lint_on UNUSEDPARAM */
 
-    reg [DATA_WIDTH-1:0] mem0, mem1, mem2, mem3;
-    reg [1:0] wr_ptr, rd_ptr;
-    reg [2:0] count;
+    reg [DATA_WIDTH-1:0]      mem    [0:DEPTH-1];
+    reg [$clog2(DEPTH)-1:0]   wr_ptr, rd_ptr;
+    reg [$clog2(DEPTH+1)-1:0] count;
+    integer i;
 
-    assign full    = (count == DEPTH_VAL[2:0]);
-    assign empty   = (count == 3'd0);
-    assign rd_data = (rd_ptr == 2'd0) ? mem0 :
-                     (rd_ptr == 2'd1) ? mem1 :
-                     (rd_ptr == 2'd2) ? mem2 : mem3;
+    assign full    = (count == DEPTH[$clog2(DEPTH+1)-1:0]);
+    assign empty   = (count == 0);
+    assign rd_data = mem[rd_ptr];
 
     always @(posedge clk) begin
-        if (reset) wr_ptr <= 2'd0;
-        else if (wr_en && !full)
-            wr_ptr <= (wr_ptr == 2'd3) ? 2'd0 : wr_ptr + 2'd1;
-    end
-
-    always @(posedge clk) begin
-        if (reset) rd_ptr <= 2'd0;
-        else if (rd_en && !empty)
-            rd_ptr <= (rd_ptr == 2'd3) ? 2'd0 : rd_ptr + 2'd1;
-    end
-
-    always @(posedge clk) begin
-        if (reset) count <= 3'd0;
-        else case ({wr_en && !full, rd_en && !empty})
-            2'b10: count <= count + 3'd1;
-            2'b01: count <= count - 3'd1;
-            default: ;
-        endcase
-    end
-
-    always @(posedge clk) begin
-        if (reset) mem0 <= {DATA_WIDTH{1'b0}};
-        else if (wr_en && !full && wr_ptr == 2'd0) mem0 <= wr_data;
-    end
-
-    always @(posedge clk) begin
-        if (reset) mem1 <= {DATA_WIDTH{1'b0}};
-        else if (wr_en && !full && wr_ptr == 2'd1) mem1 <= wr_data;
-    end
-
-    always @(posedge clk) begin
-        if (reset) mem2 <= {DATA_WIDTH{1'b0}};
-        else if (wr_en && !full && wr_ptr == 2'd2) mem2 <= wr_data;
-    end
-
-    always @(posedge clk) begin
-        if (reset) mem3 <= {DATA_WIDTH{1'b0}};
-        else if (wr_en && !full && wr_ptr == 2'd3) mem3 <= wr_data;
+        if (reset) begin
+            wr_ptr <= 0;
+            rd_ptr <= 0;
+            count  <= 0;
+            for (i = 0; i < DEPTH; i = i + 1)
+                mem[i] <= {DATA_WIDTH{1'b0}};
+        end else begin
+            if (wr_en && !full) begin
+                mem[wr_ptr] <= wr_data;
+                wr_ptr      <= wr_ptr + 1'b1;
+            end
+            if (rd_en && !empty) begin
+                rd_ptr <= rd_ptr + 1'b1;
+            end
+            case ({(wr_en && !full), (rd_en && !empty)})
+                2'b10:   count <= count + 1'b1;
+                2'b01:   count <= count - 1'b1;
+                default: count <= count;
+            endcase
+        end
     end
 
 endmodule

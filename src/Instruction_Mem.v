@@ -1,81 +1,57 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
+// ============================================================
+//  mem1KB_32bit — Instruction memory (DEPTH × 32-bit words)
+//  Optimized for ASIC: port widths explicitly sized
+//  Option 1: explicitly mark unused bits to silence Verilator warning
+// ============================================================
+
 module mem1KB_32bit #(
-    parameter DEPTH = 32
+    parameter DEPTH  = 64,                       // number of 32-bit words
+    parameter ADDR_W = $clog2(DEPTH)            // width of address bus
 )(
-    input  wire                     clk,
-    input  wire                     reset,
-    input  wire                     we,
-    input  wire [$clog2(DEPTH)-1:0] addr,
-    input  wire [31:0]              wdata,
-    input  wire [31:0]              read_Address,
-    output wire [31:0]              Instruction_out
+    input  wire              clk,               // clock for write
+    input  wire              reset,             // simulation reset only
+    input  wire              we,                // write enable
+    input  wire [ADDR_W-1:0] addr,             // write address (word index)
+    input  wire [31:0]       wdata,            // write data
+
+    input  wire [31:0]       read_Address,     // PC byte address
+    output wire [31:0]       Instruction_out   // read data
 );
-    localparam ADDR_W = $clog2(DEPTH); // = 5 for DEPTH=32
-    localparam NOP    = 32'h0000_0013;
 
-    /* verilator lint_off UNUSEDSIGNAL */
-    wire _unused_pc = &{1'b0, read_Address[31:ADDR_W+2], read_Address[1:0]};
-    /* verilator lint_on UNUSEDSIGNAL */
+    localparam [31:0] NOP = 32'h0000_0013;      // ADDI x0,x0,0
 
-    // ── 32 scalar regs — no $mem, no Yosys crash ──────────────
-    reg [31:0] m00,m01,m02,m03,m04,m05,m06,m07;
-    reg [31:0] m08,m09,m10,m11,m12,m13,m14,m15;
-    reg [31:0] m16,m17,m18,m19,m20,m21,m22,m23;
-    reg [31:0] m24,m25,m26,m27,m28,m29,m30,m31;
+    // memory array
+    reg [31:0] mem [0:DEPTH-1];
 
-    always @(posedge clk) if(reset) m00<=NOP; else if(we&&addr==5'd0)  m00<=wdata;
-    always @(posedge clk) if(reset) m01<=NOP; else if(we&&addr==5'd1)  m01<=wdata;
-    always @(posedge clk) if(reset) m02<=NOP; else if(we&&addr==5'd2)  m02<=wdata;
-    always @(posedge clk) if(reset) m03<=NOP; else if(we&&addr==5'd3)  m03<=wdata;
-    always @(posedge clk) if(reset) m04<=NOP; else if(we&&addr==5'd4)  m04<=wdata;
-    always @(posedge clk) if(reset) m05<=NOP; else if(we&&addr==5'd5)  m05<=wdata;
-    always @(posedge clk) if(reset) m06<=NOP; else if(we&&addr==5'd6)  m06<=wdata;
-    always @(posedge clk) if(reset) m07<=NOP; else if(we&&addr==5'd7)  m07<=wdata;
-    always @(posedge clk) if(reset) m08<=NOP; else if(we&&addr==5'd8)  m08<=wdata;
-    always @(posedge clk) if(reset) m09<=NOP; else if(we&&addr==5'd9)  m09<=wdata;
-    always @(posedge clk) if(reset) m10<=NOP; else if(we&&addr==5'd10) m10<=wdata;
-    always @(posedge clk) if(reset) m11<=NOP; else if(we&&addr==5'd11) m11<=wdata;
-    always @(posedge clk) if(reset) m12<=NOP; else if(we&&addr==5'd12) m12<=wdata;
-    always @(posedge clk) if(reset) m13<=NOP; else if(we&&addr==5'd13) m13<=wdata;
-    always @(posedge clk) if(reset) m14<=NOP; else if(we&&addr==5'd14) m14<=wdata;
-    always @(posedge clk) if(reset) m15<=NOP; else if(we&&addr==5'd15) m15<=wdata;
-    always @(posedge clk) if(reset) m16<=NOP; else if(we&&addr==5'd16) m16<=wdata;
-    always @(posedge clk) if(reset) m17<=NOP; else if(we&&addr==5'd17) m17<=wdata;
-    always @(posedge clk) if(reset) m18<=NOP; else if(we&&addr==5'd18) m18<=wdata;
-    always @(posedge clk) if(reset) m19<=NOP; else if(we&&addr==5'd19) m19<=wdata;
-    always @(posedge clk) if(reset) m20<=NOP; else if(we&&addr==5'd20) m20<=wdata;
-    always @(posedge clk) if(reset) m21<=NOP; else if(we&&addr==5'd21) m21<=wdata;
-    always @(posedge clk) if(reset) m22<=NOP; else if(we&&addr==5'd22) m22<=wdata;
-    always @(posedge clk) if(reset) m23<=NOP; else if(we&&addr==5'd23) m23<=wdata;
-    always @(posedge clk) if(reset) m24<=NOP; else if(we&&addr==5'd24) m24<=wdata;
-    always @(posedge clk) if(reset) m25<=NOP; else if(we&&addr==5'd25) m25<=wdata;
-    always @(posedge clk) if(reset) m26<=NOP; else if(we&&addr==5'd26) m26<=wdata;
-    always @(posedge clk) if(reset) m27<=NOP; else if(we&&addr==5'd27) m27<=wdata;
-    always @(posedge clk) if(reset) m28<=NOP; else if(we&&addr==5'd28) m28<=wdata;
-    always @(posedge clk) if(reset) m29<=NOP; else if(we&&addr==5'd29) m29<=wdata;
-    always @(posedge clk) if(reset) m30<=NOP; else if(we&&addr==5'd30) m30<=wdata;
-    always @(posedge clk) if(reset) m31<=NOP; else if(we&&addr==5'd31) m31<=wdata;
+    // ── Synchronous write with simulation reset ─────────────────
+    integer i;
+    always @(posedge clk) begin
+        `ifndef SYNTHESIS
+        if (reset) begin
+            for (i = 0; i < DEPTH; i = i + 1)
+                mem[i] <= NOP;
+        end else
+        `endif
+        if (we) begin
+            mem[addr] <= wdata;
+        end
+    end
 
-    wire [4:0] pc_word = read_Address[ADDR_W+1:2];
+    // ── Combinational asynchronous read ────────────────────────
+    // slice read_Address to match DEPTH exactly
+    wire [ADDR_W-1:0] word_idx;
+    assign word_idx = read_Address[ADDR_W+1:2];  // word-aligned address
 
-    assign Instruction_out =
-        (pc_word==5'd0)  ? m00 : (pc_word==5'd1)  ? m01 :
-        (pc_word==5'd2)  ? m02 : (pc_word==5'd3)  ? m03 :
-        (pc_word==5'd4)  ? m04 : (pc_word==5'd5)  ? m05 :
-        (pc_word==5'd6)  ? m06 : (pc_word==5'd7)  ? m07 :
-        (pc_word==5'd8)  ? m08 : (pc_word==5'd9)  ? m09 :
-        (pc_word==5'd10) ? m10 : (pc_word==5'd11) ? m11 :
-        (pc_word==5'd12) ? m12 : (pc_word==5'd13) ? m13 :
-        (pc_word==5'd14) ? m14 : (pc_word==5'd15) ? m15 :
-        (pc_word==5'd16) ? m16 : (pc_word==5'd17) ? m17 :
-        (pc_word==5'd18) ? m18 : (pc_word==5'd19) ? m19 :
-        (pc_word==5'd20) ? m20 : (pc_word==5'd21) ? m21 :
-        (pc_word==5'd22) ? m22 : (pc_word==5'd23) ? m23 :
-        (pc_word==5'd24) ? m24 : (pc_word==5'd25) ? m25 :
-        (pc_word==5'd26) ? m26 : (pc_word==5'd27) ? m27 :
-        (pc_word==5'd28) ? m28 : (pc_word==5'd29) ? m29 :
-        (pc_word==5'd30) ? m30 : m31;
+    // explicitly mark unused bits as ignored to silence warning
+    wire [31:ADDR_W+2] unused_high = read_Address[31:ADDR_W+2];
+    wire [1:0] unused_low = read_Address[1:0];
+
+    assign Instruction_out = mem[word_idx];
+
 endmodule
+
+
 
