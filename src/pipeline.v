@@ -3,28 +3,6 @@
 
 // ============================================================
 //  pipeline — RISC-V 5-stage + UART + SPI1(÷4) + SPI2(÷8) + GPIO
-//
-//  Reset buffer groups (fanout fix):
-//    rst_core   → pc_register, IF_ID, EX, MEM, WB, DataMem  (6)
-//    rst_mem    → halt_latch                                  (1)
-//    rst_periph → uart_inst0, spi1, spi2, gpio1, gpio2        (5)
-//    rst_boot   → uart_boot_inst, uart_bootloader             (2)
-//
-//  Clock buffer groups (fanout fix):
-//    clk_core    → PC, IF_ID, EX, MEM, WB, DataMem
-//    clk_imem    → instruction memory
-//    clk_regfile → register file
-//    clk_periph  → UART, SPI, GPIO, bootloader
-//
-//  LUI/AUIPC: ALUSrcA[1:0] routed Control → EX_stage → SrcA mux
-//    2'b00 = RD1 (forwarded)   — all normal instructions
-//    2'b01 = PC_E              — AUIPC
-//    2'b10 = 32'b0             — LUI
-//
-//  Fixes:
-//    mem_addr [7:0] — matches uart_bootloader output width.
-//    Sliced to [IMEM_ADDR_W-1:0] at mem1KB_32bit .addr() port.
-//    Reg_file has no reset port — removed from instantiation.
 // ============================================================
 module pipeline(
     input  wire clk,
